@@ -41,16 +41,12 @@
         :when (= 0 (mod col-bin 2))]
     [mat-col mat-row]))
 
-(def PI_2   (/ Math/PI 2.0))
-(def PI_3_2 (* 1.5 Math/PI))
-(def ORIENTATIONS [0 PI_2 Math/PI PI_3_2])
-
 (defn triangle-orientations
   "Radian orientations associated to triangle origin points."
   [triangle-points]
   (reduce (fn [memo [pt1 pt2]]
-            (let [rot1 (nth ORIENTATIONS (rand-int 3))
-                  rot2 (+ rot1 Math/PI)]
+            (let [rot1 (rand-int 3)
+                  rot2 (mod (+ rot1 2) 4)]
               (-> memo
                   (assoc-in [pt1] rot1)
                   (assoc-in [pt2] rot2))))
@@ -77,18 +73,39 @@
 (defn update-rgba [{:keys [rgba-mat frame-mat] :as state}]
   (assoc-in state [:rgba-mat] (cv/BGR->RGBA! frame-mat rgba-mat)))
 
+(defn apex-top-right [x y]
+  [(Point. x y)
+   (Point. (+ x MOSAIC-BIN-SIZE-X2) y)
+   (Point. (+ x MOSAIC-BIN-SIZE-X2) (+ y MOSAIC-BIN-SIZE-X2))])
+
+(defn apex-bottom-left [x y]
+  [(Point. (+ x MOSAIC-BIN-SIZE-X2) (+ y MOSAIC-BIN-SIZE-X2))
+   (Point. x (+ y MOSAIC-BIN-SIZE-X2))
+   (Point. x y)])
+
+(defn apex-top-left [x y]
+  [(Point. x y)
+   (Point. (+ x MOSAIC-BIN-SIZE-X2) y)
+   (Point. x (+ y MOSAIC-BIN-SIZE-X2))])
+
+(defn apex-bottom-right [x y]
+  [(Point. (+ x MOSAIC-BIN-SIZE-X2) y)
+   (Point. (+ x MOSAIC-BIN-SIZE-X2) (+ y MOSAIC-BIN-SIZE-X2))
+   (Point. x (+ y MOSAIC-BIN-SIZE-X2))])
+
 (defn glyph [n mat-col mat-row]
   (cond
    (= n 0)
-   [(Point. mat-col mat-row)
-    (Point. (+ mat-col MOSAIC-BIN-SIZE-X2) mat-row)
-    (Point. (+ mat-col MOSAIC-BIN-SIZE-X2) (+ mat-row MOSAIC-BIN-SIZE-X2))]
+   (apex-top-right mat-col mat-row)
+
+   (= n 1)
+   (apex-bottom-right mat-col mat-row)
 
    (= n 2)
-   [(Point. (+ mat-col MOSAIC-BIN-SIZE-X2) (+ mat-row MOSAIC-BIN-SIZE-X2))
-    (Point. mat-col (+ mat-row MOSAIC-BIN-SIZE-X2))
-    (Point. mat-col mat-row)]
-   ))
+   (apex-bottom-left mat-col mat-row)
+
+   (= n 3)
+   (apex-top-left mat-col mat-row)))
 
 (defn draw-mosaic-glyph [img-mat
                          color
@@ -98,7 +115,8 @@
                         g %2
                         b %3
                         a %4]
-                    (Scalar. b g r)) color)]
+                    (Scalar. b g r))
+                 color)]
     (.fromList poly (ArrayList. glyph-pts))
     (Core/fillPoly img-mat (ArrayList. [poly]) c)))
 
@@ -115,8 +133,8 @@
         c2 (color-fn mat-col2 mat-row2)
         rotation1 (triangle-orientations pt1)
         rotation2 (triangle-orientations pt2)]
-    (draw-mosaic-glyph frame-mat c1 (glyph 0 mat-col1 mat-row1))
-    (draw-mosaic-glyph frame-mat c2 (glyph 2 mat-col1 mat-row1))))
+    (draw-mosaic-glyph frame-mat c1 (glyph rotation1 mat-col1 mat-row1))
+    (draw-mosaic-glyph frame-mat c2 (glyph rotation2 mat-col1 mat-row1))))
 
 (defn overlay-triangles
   [{:keys [frame-mat rgba-mat triangle-points triangle-orientations] :as state}]
@@ -133,7 +151,6 @@
       
       (update-rgba)
       (overlay-triangles)
-      #_(update-rgba-p-image)
       (cv/update-p-image)))
 
 (defn draw [state]
