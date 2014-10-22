@@ -4,10 +4,11 @@
    [quil.middleware :as m]
    [videotest.triangles.cv :as cv])
   (:import
-   [org.opencv.core CvType Mat MatOfKeyPoint Point Size]
+   [org.opencv.core Core CvType Mat MatOfKeyPoint MatOfPoint Point Scalar Size]
    [org.opencv.features2d FeatureDetector KeyPoint]
    [org.opencv.imgproc Imgproc]
-   [java.nio ByteBuffer ByteOrder]))
+   [java.nio ByteBuffer ByteOrder]
+   [java.util ArrayList]))
 
 
 (def CAM-SIZE (cv/camera-frame-size))
@@ -19,6 +20,13 @@
 (def PIX-CNT1 (* WIDTH HEIGHT 4))
 (def PIX-CNT2 (* WIDTH HEIGHT))
 
+
+(def MOSAIC-BIN-SIZE 12)
+(def MOSAIC-BIN-SIZE-X2  (* MOSAIC-BIN-SIZE 2.0))
+(def MOSAIC-BIN-SIZE-2   (/ MOSAIC-BIN-SIZE 2.0))
+(def NEG-MOSAIC-BIN-SIZE (- MOSAIC-BIN-SIZE))
+(def NUM-COL-BINS (/ WIDTH  MOSAIC-BIN-SIZE))
+(def NUM-ROW-BINS (/ HEIGHT MOSAIC-BIN-SIZE))
 
 (defn triangle-points
   "Saves origin points for each triangle, which is a vector pair of
@@ -32,13 +40,6 @@
                          MOSAIC-BIN-SIZE-2)]
         :when (= 0 (mod col-bin 2))]
     [mat-col mat-row]))
-
-(def MOSAIC-BIN-SIZE 12)
-(def MOSAIC-BIN-SIZE-X2  (* MOSAIC-BIN-SIZE 2.0))
-(def MOSAIC-BIN-SIZE-2   (/ MOSAIC-BIN-SIZE 2.0))
-(def NEG-MOSAIC-BIN-SIZE (- MOSAIC-BIN-SIZE))
-(def NUM-COL-BINS (/ WIDTH  MOSAIC-BIN-SIZE))
-(def NUM-ROW-BINS (/ HEIGHT MOSAIC-BIN-SIZE))
 
 (def PI_2   (/ Math/PI 2.0))
 (def PI_3_2 (* 1.5 Math/PI))
@@ -76,32 +77,35 @@
 (defn update-rgba [{:keys [rgba-mat frame-mat] :as state}]
   (assoc-in state [:rgba-mat] (cv/BGR->RGBA! frame-mat rgba-mat)))
 
-(defn update [state]
-  (-> state
-      (cv/update-frame)
-      #_(update-triangle-orientations)
-      
-      (update-rgba)
-      #_(cv/update-p-image)
-      ))
+(defn glyph [n mat-col mat-row]
+  (cond
+   (= n 0)
+   [(Point. mat-col mat-row)
+    (Point. (+ mat-col MOSAIC-BIN-SIZE-X2) mat-row)
+    (Point. (+ mat-col MOSAIC-BIN-SIZE-X2) (+ mat-row MOSAIC-BIN-SIZE-X2))]
 
-(defn draw-mosaic-glyph [color
-                         rotation
-                         mat-col mat-row]
-  (apply q/fill color)
-  (apply q/stroke color)
-  
-  (q/with-translation [(+ mat-col MOSAIC-BIN-SIZE)
-                       (+ mat-row MOSAIC-BIN-SIZE)]
-    (q/with-rotation [rotation]
-      (q/triangle NEG-MOSAIC-BIN-SIZE NEG-MOSAIC-BIN-SIZE
-                  NEG-MOSAIC-BIN-SIZE     MOSAIC-BIN-SIZE
-                      MOSAIC-BIN-SIZE     MOSAIC-BIN-SIZE))))
+   (= n 2)
+   [(Point. (+ mat-col MOSAIC-BIN-SIZE-X2) (+ mat-row MOSAIC-BIN-SIZE-X2))
+    (Point. mat-col (+ mat-row MOSAIC-BIN-SIZE-X2))
+    (Point. mat-col mat-row)]
+   ))
+
+(defn draw-mosaic-glyph [img-mat
+                         color
+                         glyph-pts]
+  (let [poly (MatOfPoint.)
+        c (apply #(let [r %1
+                        g %2
+                        b %3
+                        a %4]
+                    (Scalar. b g r)) color)]
+    (.fromList poly (ArrayList. glyph-pts))
+    (Core/fillPoly img-mat (ArrayList. [poly]) c)))
 
 (defn draw-mosaic-pair
-  [triangle-orientations color-mat [pt1 pt2]]
+  [triangle-orientations frame-mat rgba-mat [pt1 pt2]]
   (let [color-fn (fn [mat-col mat-row]
-                   (let [c (.get color-mat mat-row mat-col)]
+                   (let [c (.get rgba-mat mat-row mat-col)]
                      (if (< 0 (count c))
                        (vec c)
                        [0 0 0])))
@@ -111,22 +115,26 @@
         c2 (color-fn mat-col2 mat-row2)
         rotation1 (triangle-orientations pt1)
         rotation2 (triangle-orientations pt2)]
-    (draw-mosaic-glyph c1 rotation1 mat-col1 mat-row1)
-    (draw-mosaic-glyph c2 rotation2 mat-col1 mat-row1)))
+    (draw-mosaic-glyph frame-mat c1 (glyph 0 mat-col1 mat-row1))
+    (draw-mosaic-glyph frame-mat c2 (glyph 2 mat-col1 mat-row1))))
 
-(defn draw-mosaic
-  [{:keys [rgba-mat triangle-points triangle-orientations]}]
-  (q/push-matrix)
-  (q/push-style)
-  ;; (q/no-stroke)
-  (q/stroke-weight 2.0) ; remove borders
+(defn overlay-triangles
+  [{:keys [frame-mat rgba-mat triangle-points triangle-orientations] :as state}]
   (dorun
    (map (partial draw-mosaic-pair
                  triangle-orientations
-                 rgba-mat)
+                 frame-mat rgba-mat)
         (partition 2 triangle-points)))
-  (q/pop-style)
-  (q/pop-matrix))
+  state)
+
+(defn update [state]
+  (-> state
+      (cv/update-frame)
+      
+      (update-rgba)
+      (overlay-triangles)
+      #_(update-rgba-p-image)
+      (cv/update-p-image)))
 
 (defn draw [state]
   (let [{:keys [p-image frame-mat]} state]
@@ -134,10 +142,10 @@
     (q/push-matrix)
     (q/translate WIDTH 0)
     (q/scale -1 1)
-    #_(when p-image
+    (when p-image
       (q/image p-image 0 0)
       #_(draw-centroids state))
-    (when-not (cv/mat-empty? frame-mat)
+    #_(when-not (cv/mat-empty? frame-mat)
       (draw-mosaic state))
     (q/pop-matrix)))
 
