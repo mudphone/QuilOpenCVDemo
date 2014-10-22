@@ -45,33 +45,11 @@
   "Radian orientations associated to triangle origin points."
   [triangle-points]
   (reduce (fn [memo [pt1 pt2]]
-            (let [rot1 (rand-int 3)
-                  rot2 (mod (+ rot1 2) 4)]
+            (let [rot1 (rand-int 4)]
               (-> memo
-                  (assoc-in [pt1] rot1)
-                  (assoc-in [pt2] rot2))))
+                  (assoc-in [pt1] rot1))))
           {}
           (partition 2 triangle-points)))
-
-
-;; bArray is the temporary byte array buffer for OpenCV cv::Mat.
-;; iArray is the temporary integer array buffer for PImage pixels.
-(defn setup []
-  (q/frame-rate 60)
-  (let [tri-pts (triangle-points)]
-   {:b-array (byte-array PIX-CNT1)
-    :i-array (int-array PIX-CNT2)
-    :frame-mat (Mat. WIDTH HEIGHT CvType/CV_8UC3)
-    :output-mat (Mat. WIDTH HEIGHT CvType/CV_8UC4)
-    :gray-mat (Mat.)
-    :rgba-mat (Mat.)
-    :camera (cv/camera 0)
-    :p-image (q/create-image WIDTH HEIGHT :rgb)
-    :triangle-points tri-pts
-    :triangle-orientations (triangle-orientations tri-pts)}))
-
-(defn update-rgba [{:keys [rgba-mat frame-mat] :as state}]
-  (assoc-in state [:rgba-mat] (cv/BGR->RGBA! frame-mat rgba-mat)))
 
 (defn apex-top-right [x y]
   [(Point. x y)
@@ -84,28 +62,60 @@
    (Point. x y)])
 
 (defn apex-top-left [x y]
-  [(Point. x y)
-   (Point. (+ x MOSAIC-BIN-SIZE-X2) y)
-   (Point. x (+ y MOSAIC-BIN-SIZE-X2))])
+  [(Point. x (+ y MOSAIC-BIN-SIZE-X2))
+   (Point. x y)
+   (Point. (+ x MOSAIC-BIN-SIZE-X2) y)])
 
 (defn apex-bottom-right [x y]
   [(Point. (+ x MOSAIC-BIN-SIZE-X2) y)
    (Point. (+ x MOSAIC-BIN-SIZE-X2) (+ y MOSAIC-BIN-SIZE-X2))
    (Point. x (+ y MOSAIC-BIN-SIZE-X2))])
 
-(defn glyph [n mat-col mat-row]
+(defn glyph [n x y]
   (cond
    (= n 0)
-   (apex-top-right mat-col mat-row)
+   (apex-top-right x y)
 
    (= n 1)
-   (apex-bottom-right mat-col mat-row)
+   (apex-bottom-right x y)
 
    (= n 2)
-   (apex-bottom-left mat-col mat-row)
+   (apex-bottom-left x y)
 
    (= n 3)
-   (apex-top-left mat-col mat-row)))
+   (apex-top-left x y)))
+
+(defn triangle-glyphs [triangle-points triangle-orientations]
+    (reduce (fn [memo [[x y :as pt1] pt2]]
+              (let [rot1 (triangle-orientations pt1)
+                    rot2 (mod (+ rot1 2) 4)]
+              (-> memo
+                  (assoc-in [pt1] (glyph rot1 x y))
+                  (assoc-in [pt2] (glyph rot2 x y)))))
+          {}
+          (partition 2 triangle-points)))
+
+;; bArray is the temporary byte array buffer for OpenCV cv::Mat.
+;; iArray is the temporary integer array buffer for PImage pixels.
+(defn setup []
+  (q/frame-rate 60)
+  (let [tri-pts (triangle-points)
+        tri-orients (triangle-orientations tri-pts)
+        tri-glyphs (triangle-glyphs tri-pts tri-orients)]
+   {:b-array (byte-array PIX-CNT1)
+    :i-array (int-array PIX-CNT2)
+    :frame-mat (Mat. WIDTH HEIGHT CvType/CV_8UC3)
+    :output-mat (Mat. WIDTH HEIGHT CvType/CV_8UC4)
+    :gray-mat (Mat.)
+    :rgba-mat (Mat.)
+    :camera (cv/camera 0)
+    :p-image (q/create-image WIDTH HEIGHT :rgb)
+    :triangle-points tri-pts
+    :triangle-orientations tri-orients
+    :triangle-glyphs tri-glyphs}))
+
+(defn update-rgba [{:keys [rgba-mat frame-mat] :as state}]
+  (assoc-in state [:rgba-mat] (cv/BGR->RGBA! frame-mat rgba-mat)))
 
 (defn draw-mosaic-glyph [img-mat
                          color
@@ -121,7 +131,7 @@
     (Core/fillPoly img-mat (ArrayList. [poly]) c)))
 
 (defn draw-mosaic-pair
-  [triangle-orientations frame-mat rgba-mat [pt1 pt2]]
+  [triangle-glyphs frame-mat rgba-mat [pt1 pt2]]
   (let [color-fn (fn [mat-col mat-row]
                    (let [c (.get rgba-mat mat-row mat-col)]
                      (if (< 0 (count c))
@@ -130,17 +140,15 @@
         [mat-col1 mat-row1] pt1
         [mat-col2 mat-row2] pt2
         c1 (color-fn mat-col1 mat-row1)
-        c2 (color-fn mat-col2 mat-row2)
-        rotation1 (triangle-orientations pt1)
-        rotation2 (triangle-orientations pt2)]
-    (draw-mosaic-glyph frame-mat c1 (glyph rotation1 mat-col1 mat-row1))
-    (draw-mosaic-glyph frame-mat c2 (glyph rotation2 mat-col1 mat-row1))))
+        c2 (color-fn mat-col2 mat-row2)]
+    (draw-mosaic-glyph frame-mat c1 (triangle-glyphs pt1))
+    (draw-mosaic-glyph frame-mat c2 (triangle-glyphs pt2))))
 
 (defn overlay-triangles
-  [{:keys [frame-mat rgba-mat triangle-points triangle-orientations] :as state}]
+  [{:keys [frame-mat rgba-mat triangle-points triangle-glyphs] :as state}]
   (dorun
    (map (partial draw-mosaic-pair
-                 triangle-orientations
+                 triangle-glyphs
                  frame-mat rgba-mat)
         (partition 2 triangle-points)))
   state)
