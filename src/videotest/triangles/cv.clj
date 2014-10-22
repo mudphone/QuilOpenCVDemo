@@ -76,7 +76,10 @@
 (defn gray-mat->p-img [in-mat out-mat b-array i-array p-img]
   (any-mat->p-img in-mat out-mat Imgproc/COLOR_GRAY2RGBA b-array i-array p-img))
 
-(defn mat->p-img [in-mat out-mat b-array i-array p-img]
+(defn mat->p-img
+  "Input mat is really BGR, but we'll flip these bits in
+   any-mat->p-img. If you don't use that, swap blue and red."
+  [in-mat out-mat b-array i-array p-img]
   (any-mat->p-img in-mat out-mat Imgproc/COLOR_RGB2RGBA b-array i-array p-img))
 
 (defn update-p-image [state]

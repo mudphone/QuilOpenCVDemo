@@ -20,24 +20,23 @@
 (def PIX-CNT2 (* WIDTH HEIGHT))
 
 
-;; bArray is the temporary byte array buffer for OpenCV cv::Mat.
-;; iArray is the temporary integer array buffer for PImage pixels.
-(defn setup []
-  (q/frame-rate 60)
-  {:b-array (byte-array PIX-CNT1)
-   :i-array (int-array PIX-CNT2)
-   :frame-mat (Mat. WIDTH HEIGHT CvType/CV_8UC3)
-   :output-mat (Mat. WIDTH HEIGHT CvType/CV_8UC4)
-   :gray-mat (Mat.)
-   :rgba-mat (Mat.)
-   :camera (cv/camera 0)
-   :p-image (q/create-image WIDTH HEIGHT :rgb)
-   :triangle-points nil
-   :triangle-orientations {}})
+(defn triangle-points
+  "Saves origin points for each triangle, which is a vector pair of
+   x and y positions in the image material [col row]."
+  []
+  (for [col-bin (range 0 NUM-COL-BINS)
+        row-bin (range 0 NUM-ROW-BINS)
+        :let [mat-col (+ (* col-bin MOSAIC-BIN-SIZE)
+                         MOSAIC-BIN-SIZE-2)
+              mat-row (+ (* row-bin MOSAIC-BIN-SIZE)
+                         MOSAIC-BIN-SIZE-2)]
+        :when (= 0 (mod col-bin 2))]
+    [mat-col mat-row]))
 
 (def MOSAIC-BIN-SIZE 12)
-(def MOSAIC-BIN-SIZE-X2 (* MOSAIC-BIN-SIZE 2.0))
-(def MOSAIC-BIN-SIZE-2 (/ MOSAIC-BIN-SIZE 2.0))
+(def MOSAIC-BIN-SIZE-X2  (* MOSAIC-BIN-SIZE 2.0))
+(def MOSAIC-BIN-SIZE-2   (/ MOSAIC-BIN-SIZE 2.0))
+(def NEG-MOSAIC-BIN-SIZE (- MOSAIC-BIN-SIZE))
 (def NUM-COL-BINS (/ WIDTH  MOSAIC-BIN-SIZE))
 (def NUM-ROW-BINS (/ HEIGHT MOSAIC-BIN-SIZE))
 
@@ -45,34 +44,34 @@
 (def PI_3_2 (* 1.5 Math/PI))
 (def ORIENTATIONS [0 PI_2 Math/PI PI_3_2])
 
-(defn update-triangles
-  "Saves origin points for each triangle, which is a vector pair of
-   x and y positions in the image material [col row]."
-  [state]
-  (let [pts (for [col-bin (range 0 NUM-COL-BINS)
-                  row-bin (range 0 NUM-ROW-BINS)
-                  :let [mat-col (+ (* col-bin MOSAIC-BIN-SIZE)
-                                   MOSAIC-BIN-SIZE-2)
-                        mat-row (+ (* row-bin MOSAIC-BIN-SIZE)
-                                   MOSAIC-BIN-SIZE-2)]
-                  :when (= 0 (mod col-bin 2))]
-              [mat-col mat-row])]
-    (assoc-in state [:triangle-points] pts)))
-
-(defn update-triangle-orientations
+(defn triangle-orientations
   "Radian orientations associated to triangle origin points."
-  [{:keys [triangle-points triangle-orientations] :as state}]
-  (if (< (q/frame-count) 10)
-    (let [orients (reduce (fn [memo [pt1 pt2]]
-                            (let [rot1 (nth ORIENTATIONS (rand-int 3))
-                                  rot2 (+ rot1 Math/PI)]
-                              (-> memo
-                                  (assoc-in [pt1] rot1)
-                                  (assoc-in [pt2] rot2))))
-                          triangle-orientations
-                          (partition 2 triangle-points))]
-     (assoc-in state [:triangle-orientations] orients))
-   state))
+  [triangle-points]
+  (reduce (fn [memo [pt1 pt2]]
+            (let [rot1 (nth ORIENTATIONS (rand-int 3))
+                  rot2 (+ rot1 Math/PI)]
+              (-> memo
+                  (assoc-in [pt1] rot1)
+                  (assoc-in [pt2] rot2))))
+          {}
+          (partition 2 triangle-points)))
+
+
+;; bArray is the temporary byte array buffer for OpenCV cv::Mat.
+;; iArray is the temporary integer array buffer for PImage pixels.
+(defn setup []
+  (q/frame-rate 60)
+  (let [tri-pts (triangle-points)]
+   {:b-array (byte-array PIX-CNT1)
+    :i-array (int-array PIX-CNT2)
+    :frame-mat (Mat. WIDTH HEIGHT CvType/CV_8UC3)
+    :output-mat (Mat. WIDTH HEIGHT CvType/CV_8UC4)
+    :gray-mat (Mat.)
+    :rgba-mat (Mat.)
+    :camera (cv/camera 0)
+    :p-image (q/create-image WIDTH HEIGHT :rgb)
+    :triangle-points tri-pts
+    :triangle-orientations (triangle-orientations tri-pts)}))
 
 (defn update-rgba [{:keys [rgba-mat frame-mat] :as state}]
   (assoc-in state [:rgba-mat] (cv/BGR->RGBA! frame-mat rgba-mat)))
@@ -80,10 +79,11 @@
 (defn update [state]
   (-> state
       (cv/update-frame)
+      #_(update-triangle-orientations)
+      
       (update-rgba)
       #_(cv/update-p-image)
-      (update-triangles)
-      (update-triangle-orientations)))
+      ))
 
 (defn draw-mosaic-glyph [color
                          rotation
@@ -94,11 +94,9 @@
   (q/with-translation [(+ mat-col MOSAIC-BIN-SIZE)
                        (+ mat-row MOSAIC-BIN-SIZE)]
     (q/with-rotation [rotation]
-      (q/with-translation [(- MOSAIC-BIN-SIZE)
-                           (- MOSAIC-BIN-SIZE)]
-       (q/triangle 0                  0
-                   0                  MOSAIC-BIN-SIZE-X2
-                   MOSAIC-BIN-SIZE-X2 MOSAIC-BIN-SIZE-X2)))))
+      (q/triangle NEG-MOSAIC-BIN-SIZE NEG-MOSAIC-BIN-SIZE
+                  NEG-MOSAIC-BIN-SIZE     MOSAIC-BIN-SIZE
+                      MOSAIC-BIN-SIZE     MOSAIC-BIN-SIZE))))
 
 (defn draw-mosaic-pair
   [triangle-orientations color-mat [pt1 pt2]]
@@ -136,8 +134,8 @@
     (q/push-matrix)
     (q/translate WIDTH 0)
     (q/scale -1 1)
-    (when p-image
-      #_(q/image p-image 0 0)
+    #_(when p-image
+      (q/image p-image 0 0)
       #_(draw-centroids state))
     (when-not (cv/mat-empty? frame-mat)
       (draw-mosaic state))
