@@ -11,7 +11,9 @@
    [java.util ArrayList]))
 
 
-(def CAM-SIZE (cv/camera-frame-size))
+(def CAM-DEVICE 1) ;; 500 for ps3 on left, 0 for default
+
+(def CAM-SIZE (cv/camera-frame-size CAM-DEVICE))
 (def WIDTH  (int (:width  CAM-SIZE)))
 (def HEIGHT (int (:height CAM-SIZE)))
 
@@ -108,7 +110,7 @@
     :output-mat (Mat. WIDTH HEIGHT CvType/CV_8UC4)
     :gray-mat (Mat.)
     :rgba-mat (Mat.)
-    :camera (cv/camera 0)
+    :camera (cv/camera CAM-DEVICE)
     :p-image (q/create-image WIDTH HEIGHT :rgb)
     :triangle-points tri-pts
     :triangle-orientations tri-orients

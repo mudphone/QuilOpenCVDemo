@@ -22,6 +22,19 @@
 (def FLOW-MIN 10)
 
 ;; OpenCV Implementation Wrapper - Will move to separate NS.
+(defn test-cam-devices []
+  (let [start-n 1
+        total 50000
+        vc (VideoCapture.)
+        test-fn (fn [dev-n]
+                  (when (.open vc dev-n)
+                    (println "Cam connected: " dev-n)
+                    (.release vc)))]
+    (dorun
+     (for [n (range start-n total)]
+       (test-fn n)))
+    (println "Tested devices from" start-n "to" (dec total))))
+
 (defn camera [dev]
   (VideoCapture. dev))
 
@@ -43,12 +56,15 @@
 ;; <--End OpenCV Implementation Wrapper
 
 
-(defn camera-frame-size []
-  (let [cam (camera 0)
-        s (-> (grab-frame! cam (Mat.))
-              (.size))]
-    (.release cam)
-    {:width (.width s) :height (.height s)}))
+(defn camera-frame-size
+  ([]
+     (camera-frame-size 0))
+  ([device-num]
+     (let [cam (camera device-num)
+           s (-> (grab-frame! cam (Mat.))
+                 (.size))]
+       (.release cam)
+       {:width (.width s) :height (.height s)})))
 
 
 (defn update-frame [state]
