@@ -11,7 +11,7 @@
    [java.util ArrayList]))
 
 
-(def CAM-DEVICE 1) ;; 500 for ps3 on left, 0 for default
+(def CAM-DEVICE 0) ;; 0 and 500 for default webcam
 
 (def CAM-SIZE (cv/camera-frame-size CAM-DEVICE))
 (def WIDTH  (int (:width  CAM-SIZE)))
