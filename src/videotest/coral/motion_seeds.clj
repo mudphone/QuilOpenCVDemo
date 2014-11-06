@@ -4,7 +4,8 @@
    [videotest.coral.color :as color]
    [videotest.coral.hex :as hex]
    [videotest.coral.motion-trace :as mtrace]
-   [videotest.coral.noise :as pnoise]))
+   [videotest.coral.noise :as pnoise]
+   [videotest.sound.sound :as sound]))
 
 
 ;; (def SEED-W 10)
@@ -35,6 +36,7 @@
 (defn init-motion-seed [rgb-in-mat hsv-out-mat x y rgba]
   (let [hsva (color/rgba->hsva rgb-in-mat hsv-out-mat rgba)
         velocity (rand-target-velocity)]
+    (sound/wave)
     {:x x :y y :color-rgba rgba :color-hsva hsva
      :velocity velocity :target-velocity velocity}))
 

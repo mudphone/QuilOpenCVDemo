@@ -2,6 +2,7 @@
   (:use [overtone.live])
   (:require [videotest.sound.harpsichord :as gharp]
             [overtone.inst.drum :as drum]
+            [overtone.inst.piano :as piano]
             [quil.core :as q]))
 
 
@@ -66,6 +67,12 @@
 
 (defn bing [amp freq attack decay]
   (drum/bing :amp amp :freq freq :attack attack :decay decay))
+
+(defn wave []
+  #_(piano/piano 80)
+  #_(bing 1.0 100 0.01 0.5)
+  #_(gharp/play-single-note-by-int 80 0.05)
+  #_(drum/kick :amp 2.0 :freq 300 :attack 0.01 :decay 0.5))
 
 (defn drum-polyp-creation [rel-freq]
   (let [freq (q/map-range rel-freq 0.0 1.0 300.0 200.0)]
